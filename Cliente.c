@@ -6,23 +6,14 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include<pthread.h>
-#include <sys/shm.h>
-#include <sys/ipc.h>
-#include <sys/sem.h>
 
 void main (int argc, char* argv[])
 {
 	int sock;		/* descriptor de conexión con el servidor */
 	int error;		/* error de lectura por el socket */
-	
-	key_t Clave;                        //clave para recursos compartidos
-	int Id_Semaforo;                    //Identificador de Semaforos
-	struct sembuf Operacion;
-	struct sembuf MutexDecrem;
-	struct sembuf MutexIncrem;
 
-	t_socket estructura;
+    t_socket estructura; //CON ESTA ESTRUCTURA VOY A LEER Y ESCRIBIR
+    
 	char *ayuda="-Help"; //Uso esta cadena para ver si el usuario quiere ver la ayuda
     if (argc == 2 && strcmp(argv[1],ayuda) == 0) //Muestro la ayuda al usuario
     {
@@ -44,85 +35,51 @@ void main (int argc, char* argv[])
         printf("\n");
         exit(1);
 	}
-	
-	Clave = ftok("/bin/ls",VALOR);       //Pido una clave para recursos compartidos y verifico que haya podido recibirla
-    if (Clave == (key_t) -1)
-	{
-		printf("No consigo clave para semáforos\n");
-		exit(0);
-    }
-
-	Id_Semaforo = semget (Clave, 3, 0600 | IPC_CREAT);      //Pido ID para Semaforos y verifico que haya podido recibirla
-	if (Id_Semaforo ==(key_t) -1)
-	{
-		printf("No puedo crear sem�foro\n");
-		exit (0);
-    }
-
-	semctl(Id_Semaforo,1,SETVAL,0);
-
-
-	Operacion.sem_num= 1;
-	Operacion.sem_op= -1;
-	Operacion.sem_flg= 0;
-
-	//Con esto voy a incrementar y decrementar el Mutex
-	MutexDecrem.sem_num= 2;
-	MutexDecrem.sem_op= -1;
-	MutexDecrem.sem_flg= 0;
-	
-	MutexIncrem.sem_num= 2;
-	MutexIncrem.sem_op= 1;
-	MutexIncrem.sem_flg= 0;
 
 	/* Se abre una conexión con el servidor */
-	sock = Abre_Conexion_Inet ("localhost", "cpp_java");
+	sock = Abre_Conexion_Inet ("localhost", "cpp_java"); //En el futuro va a haber que reemplazar estos datos.
 
-	char consulta[100];
-    char *campo;
-    char *valor;
-    char delimitador[2]="=";
+	char consulta[100]; //Este será el string donde el usuario ingresará la consulta
+    char *campo;        //aca guardo el campo
+    char *valor;        //aca guardo el valor del campo
+    char delimitador[2]="=";    //con este delimitador voy a separar la consulta
+    /*Ingreso la consulta*/
     puts("Ingrese su consulta");
-    fflush(stdin);
+    fflush(stdin);  //recuerden que hay que limpiar el buffer de entrada cuando se lee una cadena 
     scanf("%s", consulta);
-    while (strcmp(consulta,"QUIT") != 0)
+    while (strcmp(consulta,"QUIT") != 0)    //si el usuario ingreso QUIT, debo salir
     {
-        campo=strtok(consulta,delimitador);
-        valor=strtok(NULL,delimitador);
-        for (int i = 0; i < strlen(valor); i++)
+        campo=strtok(consulta,delimitador);             //obtengo el campo
+        valor=strtok(NULL,delimitador);                 //obtengo el valor
+        for (int i = 0; i < strlen(valor); i++)         //Esto es para buscar nombres con espacio. Ej: si quiero consultar por la marca "EL COLOSO", en la consulta debo escribir "EL.COLOSO" luego se separa
         {
             if (valor[i] == '.')
             {
                 valor[i]= ' ';
             }
         }
-		printf("Consulta: %s-%s\n", campo, valor);
-		strcpy(estructura.campo,campo);
-		strcpy(estructura.valor,valor);
-		estructura.tamanio=0;
-		semop(Id_Semaforo,&MutexDecrem,1);
-		Escribe_Socket(sock,&estructura,sizeof(t_socket));
-		semop(Id_Semaforo,&MutexIncrem,1);
-		puts("Espero a que liberen mi semaforo");
-		semop(Id_Semaforo,&Operacion,1);
-		puts("Liberaron mi semaforo");
-		semop(Id_Semaforo,&MutexDecrem,1);
-		if ((Lee_Socket (sock, &estructura, sizeof(t_socket)) > 0)){
-			if (estructura.tamanio > 0)
+		printf("Consulta Ingresada: %s-%s\n", campo, valor);    //Consulta que se ingresa
+		strcpy(estructura.campo,campo);                         //escribo en el buffer del socket
+		strcpy(estructura.valor,valor);                         //escribo en el buffer del socket
+		estructura.tamanio=0;                                   //seteo el tamaño en 0
+		
+		Escribe_Socket(sock,&estructura,sizeof(t_socket));      //escribo en el servidor la consulta
+
+		if ((Lee_Socket (sock, &estructura, sizeof(t_socket)) > 0)){ //este if es para ver si pude recibir lo que me envio el servidor
+			if (estructura.tamanio > 0) //Si el tamaño es mayor a 0, quiere decir que tengo una coincidencia
 			{
-				printf("Se encontraron %d coincidencias:\n", estructura.tamanio);
+				printf("Se encontraron %d coincidencias:\n", estructura.tamanio);   //informo las coincidencias
 				for (int i = 0; i < estructura.tamanio; i++)
-				{
+				{   /* Muestro los datos */
 					printf("Id: %s\tProducto: %s\tArticulo: %s\tMarca: %s\n", estructura.item_id[i], estructura.producto[i], estructura.articulo[i], estructura.marca[i]);
 				}
 			}
 			else
 			{
-				puts("Su busqueda no produjo coincidencias\n");
+				puts("Su busqueda no produjo coincidencias\n"); //informo si la busqueda no obtuvo resultados
 			}
 		}
-		semop(Id_Semaforo,&MutexIncrem,1);
-		puts("Ingrese su consulta");
+		puts("Ingrese su consulta");    //pido una consulta nueva
     	fflush(stdin);
     	scanf("%s", consulta);
 	}

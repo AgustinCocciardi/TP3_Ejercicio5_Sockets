@@ -6,12 +6,8 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include<pthread.h>
-#include <sys/shm.h>
-#include <sys/ipc.h>
-#include <sys/sem.h>
 
-#define MAX_CLIENTES 10
+#define MAX_CLIENTES 10		//DEFINO EL NUMERO MAXIMO DE CLIENTES QUE VOY A USAR
 
 /* Prototipos de las funciones definidas en este fichero */
 void nuevoCliente (int servidor, int *clientes, int *nClientes);
@@ -20,31 +16,23 @@ void compactaClaves (int *tabla, int *n);
 
 void main (int argc, char* argv[])
 {
-	key_t Clave;                        //clave para recursos compartidos
-	int Id_Semaforo;                    //Identificador de Semaforos
-	
-	struct sembuf OperacionDecrem;                
-	struct sembuf OperacionIncrem; 
-	struct sembuf OperacionOtroProceso;     //Defino la forma de tratar a los semáforos en el otro proceso
-	struct sembuf MutexDecrem;
-	struct sembuf MutexIncrem;
-	struct sembuf Operacion;
-	
 	int socketServidor;				/* Descriptor del socket servidor */
 	int socketCliente[MAX_CLIENTES];/* Descriptores de sockets con clientes */
 	int numeroClientes = 0;			/* Número clientes conectados */
 	fd_set descriptoresLectura;	/* Descriptores de interes para select() */
-	t_socket estructura;
+	
+	t_socket estructura;	//CON ESTA ESTRUCTURA VOY A LEER Y ESCRIBIR
+
 	int maximo;							/* Número de descriptor más grande */
 	int i;								/* Para bubles */
 
 	char delimitador[]=";\n";             //con este delimitador y la funcion strtok voy a separar los campos
-    char palabra[200]; 
+    char palabra[200]; 						//voy a guardar una linea del archivo con esto
 
-	char* item_id;
-    char* articulo;
-    char* producto;
-    char* marca;
+	char* item_id;					//guardo el id
+    char* articulo;					//guardo el articulo
+    char* producto;					//guardo el producto
+    char* marca;					//guardo la marca
 
 	char *ayuda="-Help"; //Uso esta cadena para ver si el usuario quiere ver la ayuda
     if (argc == 2 && strcmp(argv[1],ayuda) == 0) //Muestro la ayuda al usuario
@@ -73,60 +61,16 @@ void main (int argc, char* argv[])
         exit(1);
 	}
 	
-	char* nombreArchivo= argv[1];
-	int puerto = atoi(argv[2]);
+	char* nombreArchivo= argv[1];		//me quedo con el nombre del archivo
+	int puerto = atoi(argv[2]);			//me quedo con el puerto. ESTO TODAVIA NO HACE NADA PORQUE NO IMPLEMENTO TCP. SOLO LO GUARDO
 
-	FILE *archivo;
+	FILE *archivo;						//Abro el archivo en modo lectura
 	archivo=fopen(nombreArchivo,"r");
 	if(archivo == NULL)
 	{
 		puts("Error al leer el archivo. Es posible que no exista o no tenga permisos de lectura");
 		exit(3);
 	} 
-
-	Clave = ftok("/bin/ls",VALOR);       //Pido una clave para recursos compartidos y verifico que haya podido recibirla
-    if (Clave == (key_t) -1)
-	{
-		printf("No consigo clave para semáforos\n");
-		exit(0);
-    }
-
-	Id_Semaforo = semget (Clave, 3, 0600 | IPC_CREAT);      //Pido ID para Semaforos y verifico que haya podido recibirla
-	if (Id_Semaforo ==(key_t) -1)
-	{
-		printf("No puedo crear sem�foro\n");
-		exit (0);
-    }
-
-	semctl(Id_Semaforo,0,SETVAL,MAX_CLIENTES);     
-	semctl(Id_Semaforo,2,SETVAL,1);
-
-	//Con esto voy a decrementar e incrementar mi semáforo
-    OperacionDecrem.sem_num= 0;
-    OperacionDecrem.sem_op= -1;
-	OperacionDecrem.sem_flg= 0;
-	
-	OperacionIncrem.sem_num= 0;
-    OperacionIncrem.sem_op= 1;
-    OperacionIncrem.sem_flg= 0;
-
-    //Con esto voy a incrementar el semáforo del otro proceso
-    OperacionOtroProceso.sem_num= 1;
-    OperacionOtroProceso.sem_op= 1;
-	OperacionOtroProceso.sem_flg= 0;
-
-	//Con esto voy a incrementar y decrementar el Mutex
-	MutexDecrem.sem_num= 2;
-	MutexDecrem.sem_op= -1;
-	MutexDecrem.sem_flg= 0;
-	
-	MutexIncrem.sem_num= 2;
-	MutexIncrem.sem_op= 1;
-	MutexIncrem.sem_flg= 0;
-
-	Operacion.sem_num= 1;
-	Operacion.sem_op= 1;
-	Operacion.sem_flg= 0;
 
 	/* Se abre el socket servidor, avisando por pantalla y saliendo si hay 
 	 * algún problema */
@@ -178,16 +122,15 @@ void main (int argc, char* argv[])
 			{
 				/* Se lee lo enviado por el cliente y se escribe en pantalla */
 				if ((Lee_Socket (socketCliente[i], &estructura, sizeof(t_socket)) > 0)){
-					semop(Id_Semaforo,&MutexDecrem,1);
-					printf ("\nUn cliente mando %s %s. Hora de atenderlo\n", estructura.campo, estructura.valor);
-					while (feof(archivo) == 0)
+					printf ("\nEl cliente %d mando %s %s. Hora de atenderlo\n", i+1, estructura.campo, estructura.valor); //recibo una consulta
+					while (feof(archivo) == 0)		//empiezo a recorrer el archivo
 					{
-						fgets(palabra,200,archivo);
-						item_id = strtok(palabra,delimitador);
+						fgets(palabra,200,archivo);					//Leo una linea
+						item_id = strtok(palabra,delimitador);		//separo el registro
 						articulo = strtok(NULL,delimitador);
 						producto = strtok(NULL,delimitador);
 						marca = strtok(NULL,delimitador);
-						if (strcmp(estructura.campo,"ID") == 0)
+						if (strcmp(estructura.campo,"ID") == 0)			//Entro si comparo por ID. El procedimiento será el mismo para los demás. Me fijo si el campo del registro coincide con la consulta. Si coincide, lo agrego al vector
 						{
 							if(strcmp(estructura.valor,item_id) == 0){
 								strcpy(estructura.item_id[estructura.tamanio],item_id);
@@ -199,7 +142,7 @@ void main (int argc, char* argv[])
 						}
 						else
 						{
-							if (strcmp(estructura.campo,"PRODUCTO") == 0)
+							if (strcmp(estructura.campo,"PRODUCTO") == 0) //Entro si comparo por PRODUCTO
 							{
 								if(strcmp(estructura.valor,producto) == 0){
 									strcpy(estructura.item_id[estructura.tamanio],item_id);
@@ -211,7 +154,7 @@ void main (int argc, char* argv[])
 							}
 							else
 							{
-								if (strcmp(estructura.campo,"ARTICULO") == 0)
+								if (strcmp(estructura.campo,"ARTICULO") == 0)	//Entro si comparo por ARTICULO
 								{
 									if(strcmp(estructura.valor,articulo) == 0){
 										strcpy(estructura.item_id[estructura.tamanio],item_id);
@@ -221,7 +164,7 @@ void main (int argc, char* argv[])
 										estructura.tamanio++;
 									}
 								}
-								else
+								else											//Entro si comparo por MARCA
 								{
 									if(strcmp(estructura.valor,marca) == 0){
 										strcpy(estructura.item_id[estructura.tamanio],item_id);
@@ -234,12 +177,9 @@ void main (int argc, char* argv[])
 							}
 						}
 					}
-					rewind(archivo);
-					semop(Id_Semaforo,&MutexIncrem,1);
-					printf("Atencion finalizada %d coincidencias encontradas\n", estructura.tamanio);
-					//semop(Id_Semaforo,&Operacion,1);
-					Escribe_Socket(socketCliente[i],&estructura,sizeof(t_socket));
-					semop(Id_Semaforo,&Operacion,1); //RESTAURAR EN CASO DE HACER DESASTRE
+					rewind(archivo);			//Rebobinar el archivo para leerlo en otra consulta
+					printf("Atencion finalizada %d coincidencias encontradas\n", estructura.tamanio);	//Finalizo la atencion
+					Escribe_Socket(socketCliente[i],&estructura,sizeof(t_socket));		//Escribo las consultas en el cliente que me las mandò
 				}
 				else
 				{
@@ -248,7 +188,6 @@ void main (int argc, char* argv[])
 					 * elimine */
 					printf ("Cliente %d ha cerrado la conexión\n", i+1);
 					socketCliente[i] = -1;
-					semop(Id_Semaforo,&OperacionIncrem,1);
 				}
 			}
 		}
@@ -256,13 +195,12 @@ void main (int argc, char* argv[])
 		/* Se comprueba si algún cliente nuevo desea conectarse y se le
 		 * admite */
 		if (FD_ISSET (socketServidor, &descriptoresLectura)){
-			semop(Id_Semaforo,&OperacionDecrem,1);
 			nuevoCliente (socketServidor, socketCliente, &numeroClientes);
 		}
 			
 	}
 
-	fclose(archivo);
+	fclose(archivo);	//Cierro el archivo
 }
 
 /*
